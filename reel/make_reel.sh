@@ -10,12 +10,12 @@ TMP=$(mktemp -d)
 
 # Gym grade matching the reference: dark, low saturation, crushed blacks,
 # slightly cool shadows / warm-neutral highlights, soft vignette.
-GRADE="eq=contrast=1.12:brightness=-0.05:saturation=0.62:gamma=0.88,\
+GRADE=${GRADE:-"eq=contrast=1.12:brightness=-0.05:saturation=0.62:gamma=0.88,\
 curves=r='0/0 0.25/0.21 0.75/0.76 1/0.96':g='0/0 0.25/0.22 0.75/0.75 1/0.96':b='0/0.02 0.25/0.25 0.75/0.73 1/0.93',\
-vignette=PI/5"
+vignette=PI/5"}
 
-TEXT="drawtext=fontfile=$FONT:text='POV - The greatest hobby':fontcolor=white:fontsize=27:x=(w-tw)/2:y=294,\
-drawtext=fontfile=$FONT:text='combo to exist':fontcolor=white:fontsize=27:x=(w-tw)/2:y=328"
+TEXT="drawtext=fontfile=$FONT:text='${LINE1:-POV - The greatest hobby}':fontcolor=white:fontsize=27:x=(w-tw)/2:y=294,\
+drawtext=fontfile=$FONT:text='${LINE2:-combo to exist}':fontcolor=white:fontsize=27:x=(w-tw)/2:y=328"
 
 ffmpeg -v error -y -ss "$SS" -t $CUT -i "$CLIP" -an \
   -vf "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,fps=30,$GRADE,$TEXT,format=yuv420p" \
