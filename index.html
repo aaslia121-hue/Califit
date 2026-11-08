@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Califit</title>
+  <style>
+    :root { --bg:#0f1115; --panel:#181b22; --text:#e8eaf0; --muted:#8a90a0; --accent:#4f8cff; --border:#2a2f3a; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+    header { padding:16px; border-bottom:1px solid var(--border); display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+    h1 { margin:0; font-size:1.4rem; }
+    nav { display:flex; gap:8px; }
+    nav button { background:none; border:1px solid var(--border); color:var(--muted); padding:8px 16px; border-radius:8px; cursor:pointer; font-size:1rem; }
+    nav button[aria-selected="true"] { color:var(--text); border-color:var(--accent); background:var(--panel); }
+    main { padding:16px; max-width:960px; margin:0 auto; }
+    .tab[hidden] { display:none; }
+    #dropzone { border:2px dashed var(--border); border-radius:12px; padding:40px 16px; text-align:center; color:var(--muted); cursor:pointer; transition:.15s; }
+    #dropzone.over { border-color:var(--accent); background:var(--panel); color:var(--text); }
+    #dropzone strong { color:var(--accent); }
+    #gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:12px; margin-top:20px; }
+    .item { background:var(--panel); border:1px solid var(--border); border-radius:10px; overflow:hidden; position:relative; }
+    .item img, .item video { width:100%; height:160px; object-fit:cover; display:block; background:#000; }
+    .item .meta { padding:8px; font-size:.8rem; color:var(--muted); word-break:break-all; }
+    .item .remove { position:absolute; top:6px; right:6px; background:#000a; color:#fff; border:none; border-radius:50%; width:26px; height:26px; cursor:pointer; }
+    .empty { color:var(--muted); margin-top:20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Califit</h1>
+    <nav role="tablist">
+      <button role="tab" data-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-tab="upload" aria-selected="false">Upload</button>
+    </nav>
+  </header>
+
+  <main>
+    <section id="home" class="tab" role="tabpanel">
+      <h2>Welcome to Califit</h2>
+      <p>Track your calisthenics progress. Use the <b>Upload</b> tab to add workout photos and videos.</p>
+    </section>
+
+    <section id="upload" class="tab" role="tabpanel" hidden>
+      <h2>Upload</h2>
+      <div id="dropzone" tabindex="0">
+        Drag &amp; drop photos or videos here, or <strong>click to browse</strong>
+        <input id="fileInput" type="file" accept="image/*,video/*" multiple hidden />
+      </div>
+      <p id="emptyMsg" class="empty">No uploads yet.</p>
+      <div id="gallery"></div>
+    </section>
+  </main>
+
+  <script>
+    // Tabs
+    const tabs = document.querySelectorAll('[role="tab"]');
+    tabs.forEach(btn => btn.addEventListener('click', () => {
+      tabs.forEach(b => b.setAttribute('aria-selected', b === btn));
+      document.querySelectorAll('.tab').forEach(s => s.hidden = s.id !== btn.dataset.tab);
+      try { localStorage.setItem('califit-tab', btn.dataset.tab); } catch {}
+    }));
+    try { const t = localStorage.getItem('califit-tab'); if (t) document.querySelector(`[data-tab="${t}"]`)?.click(); } catch {}
+
+    // Upload storage (IndexedDB so uploads persist across reloads)
+    const dbReady = new Promise((resolve, reject) => {
+      const req = indexedDB.open('califit', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('uploads', { keyPath: 'id', autoIncrement: true });
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const store = async mode => (await dbReady).transaction('uploads', mode).objectStore('uploads');
+    const asPromise = req => new Promise((res, rej) => { req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error); });
+
+    const gallery = document.getElementById('gallery');
+    const emptyMsg = document.getElementById('emptyMsg');
+    const updateEmpty = () => emptyMsg.hidden = gallery.children.length > 0;
+
+    function render(rec) {
+      const el = document.createElement('div');
+      el.className = 'item';
+      const url = URL.createObjectURL(rec.file);
+      const media = document.createElement(rec.file.type.startsWith('video') ? 'video' : 'img');
+      media.src = url;
+      if (media.tagName === 'VIDEO') media.controls = true;
+      const meta = document.createElement('div');
+      meta.className = 'meta';
+      meta.textContent = `${rec.file.name} · ${(rec.file.size / 1024 / 1024).toFixed(1)} MB`;
+      const rm = document.createElement('button');
+      rm.className = 'remove'; rm.textContent = '×'; rm.title = 'Remove';
+      rm.onclick = async () => { await asPromise((await store('readwrite')).delete(rec.id)); URL.revokeObjectURL(url); el.remove(); updateEmpty(); };
+      el.append(media, meta, rm);
+      gallery.prepend(el);
+      updateEmpty();
+    }
+
+    async function addFiles(files) {
+      for (const file of files) {
+        if (!/^(image|video)\//.test(file.type)) continue;
+        const rec = { file, added: Date.now() };
+        try { rec.id = await asPromise((await store('readwrite')).add(rec)); } catch { rec.id = null; }
+        render(rec);
+      }
+    }
+
+    (async () => {
+      try { (await asPromise((await store('readonly')).getAll())).forEach(render); } catch {}
+      updateEmpty();
+    })();
+
+    const dz = document.getElementById('dropzone');
+    const input = document.getElementById('fileInput');
+    dz.onclick = () => input.click();
+    dz.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') input.click(); };
+    input.onchange = () => { addFiles(input.files); input.value = ''; };
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+  </script>
+</body>
+</html>
